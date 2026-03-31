@@ -1,6 +1,5 @@
 import pandas as pd
 import json
-import argparse
 import requests
 from datetime import datetime
 import re
@@ -28,7 +27,7 @@ def load_sample_data(filepath: str = 'sample_data.json') -> pd.DataFrame:
         # Extração de Tier baseada no padrão de ID (ex: T4_...)
         df['tier'] = df['item_id'].str.extract(r'T(\d)')[0].fillna(0).astype(int)
         
-        print(f"DEBBUG: Dados de amostra carregados de {filepath}.")
+        print(f"DEBUG: Dados de amostra carregados de {filepath}.")
         return df
 
     except FileNotFoundError:
@@ -110,9 +109,6 @@ def fetch_sales_history(items: list[str], city: str, quality: int = 1) -> dict:
     try:
         if not items:
             return {}
-            
-        # Garante que requests está importado (caso não esteja no topo)
-        import requests 
 
         chunk_size = 20
         results = {}

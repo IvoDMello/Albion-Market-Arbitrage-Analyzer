@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import re
+from datetime import datetime, timezone
 import fetch_prices
 import store
 import arbitrage
@@ -21,7 +22,14 @@ st.title("📊 Albion Market Analyzer")
 if not os.path.exists(store.DB_FILE):
     st.caption("⚠️ Banco de dados vazio. Configure os filtros ao lado e clique em 'Atualizar'.")
 else:
-    st.caption(f"Status: Conectado")
+    last_update = store.get_last_update()
+    if last_update:
+        age_hours = (datetime.now(timezone.utc) - last_update).total_seconds() / 3600
+        age_str = f"{int(age_hours)}h atrás" if age_hours >= 1 else f"{int(age_hours * 60)}min atrás"
+        freshness = "🟢" if age_hours < 6 else ("🟡" if age_hours < 24 else "🔴")
+        st.caption(f"Status: Conectado {freshness} | Última atualização: {age_str}")
+    else:
+        st.caption("Status: Conectado | Sem dados ainda")
 
 # --- Constantes Globais ---
 CIDADES_REAIS = ["Thetford", "Fort Sterling", "Lymhurst", "Bridgewatch", "Martlock", "Caerleon", "Black Market"]
@@ -29,8 +37,10 @@ CIDADES_PORTAIS = ["Merlyn's Rest", "Arthur's Rest", "Morgana's Rest"]
 
 # --- Helpers: Formatação Visual ---
 def format_quality_name(q_id):
-    try: q_id = int(q_id)
-    except: pass
+    try:
+        q_id = int(q_id)
+    except (ValueError, TypeError):
+        pass
     mapping = {1: "Normal", 2: "Bom", 3: "Excepcional", 4: "Excelente", 5: "Obra-Prima"}
     return mapping.get(q_id, str(q_id))
 
@@ -89,7 +99,7 @@ with tab_manual:
 # 2. Seleção de Cidades
 st.sidebar.subheader("2. Onde?")
 city_input = st.sidebar.multiselect("Cidades", CIDADES_REAIS + CIDADES_PORTAIS, default=CIDADES_REAIS)
-quality_input = st.sidebar.multiselect("Qualidade", [1, 2, 3, 4, 5], default=[1])
+quality_input = st.sidebar.multiselect("Qualidade", [1, 2, 3, 4, 5], default=[1], format_func=format_quality_name)
 
 # 3. Botão de Ação
 st.sidebar.markdown("---")
@@ -116,6 +126,7 @@ with st.sidebar.expander("💰 Taxas e Lucro", expanded=False):
     fee_pct = st.number_input("Taxa Mercado (%)", 0.0, 20.0, 4.5, step=0.5)
     transport_cost = st.number_input("Custo Transporte", 0, value=500, step=100)
     min_profit_pct = st.slider("Lucro Mínimo (ROI %)", 0, 200, 10)
+    max_results = st.slider("Máx. Resultados", 10, 200, 50, step=10)
     arb_method = st.radio("Estratégia", ["Venda Lenta (Sell Order)", "Venda Imediata (Buy Order)"])
     method_code = 'sell_order' if "Lenta" in arb_method else 'instant'
 
@@ -164,32 +175,32 @@ else:
         
         # Ordenação
         filtered_opps = filtered_opps.sort_values(by='net_profit', ascending=False)
-        final_view = filtered_opps.head(50)
+        final_view = filtered_opps.head(max_results)
 
         if final_view.empty:
             st.warning(f"Existem itens, mas nenhum atinge o ROI mínimo de {min_profit_pct}%. Tente baixar a margem.")
         else:
-            # --- INÍCIO DA LÓGICA DE VOLUME (Se você já implementou o Passo 1) ---
-            # Se você ainda não implementou o 'fetch_sales_history' no fetch_prices.py,
-            # essa parte pode dar erro. Se der erro, comente as linhas abaixo até 'FIM'.
+            # Volume de vendas por cidade de destino
             try:
-                if 'fetch_sales_history' in dir(fetch_prices):
-                    unique_destinations = final_view['sell_city'].unique()
-                    volume_map = {}
-                    # Verifica volume apenas se tivermos itens
-                    for city in unique_destinations:
-                        items_for_city = final_view[final_view['sell_city'] == city]['item_id_quality'].apply(lambda x: x.split('_Q')[0]).unique().tolist()
-                        vols = fetch_prices.fetch_sales_history(items_for_city, city)
-                        volume_map.update(vols)
-                    
-                    final_view['Volume/Dia'] = final_view.apply(lambda row: volume_map.get(row['item_id_quality'].split('_Q')[0], 0), axis=1)
-                    final_view['Liq.'] = final_view['Volume/Dia'].apply(lambda x: "🟢" if x > 50 else ("🟡" if x > 10 else "🔴"))
-                else:
-                    final_view['Volume/Dia'] = "N/A"
-                    final_view['Liq.'] = "⚪"
-            except:
-                pass # Ignora erro de volume se a função não existir ainda
-            # --- FIM ---
+                unique_destinations = final_view['sell_city'].unique()
+                volume_map = {}
+                for city in unique_destinations:
+                    items_for_city = final_view[final_view['sell_city'] == city]['item_id_quality'].apply(
+                        lambda x: x.split('_Q')[0]
+                    ).unique().tolist()
+                    vols = fetch_prices.fetch_sales_history(items_for_city, city)
+                    volume_map.update(vols)
+
+                final_view['Volume/Dia'] = final_view.apply(
+                    lambda row: volume_map.get(row['item_id_quality'].split('_Q')[0], 0), axis=1
+                )
+                final_view['Liq.'] = final_view['Volume/Dia'].apply(
+                    lambda x: "🟢" if x > 50 else ("🟡" if x > 10 else "🔴")
+                )
+            except Exception as e:
+                print(f"AVISO volume: {e}")
+                final_view['Volume/Dia'] = "N/A"
+                final_view['Liq.'] = "⚪"
 
             # Métricas
             c1, c2, c3 = st.columns(3)
@@ -204,9 +215,10 @@ else:
             display_df['Compra'] = display_df['buy_price'].map('{:,.0f}'.format)
             display_df['Venda'] = display_df['sell_price'].map('{:,.0f}'.format)
             display_df['Item'] = display_df['item_id_quality'].apply(lambda x: format_item_name_pt(x.split('_Q')[0]))
-            
+            display_df['Conf.'] = display_df['confidence_score'].map('{:.0%}'.format)
+
             # Colunas dinâmicas (dependendo se volume existe ou não)
-            cols = ['Item', 'buy_city', 'sell_city', 'Compra', 'Venda', 'Lucro', 'ROI']
+            cols = ['Item', 'buy_city', 'sell_city', 'Compra', 'Venda', 'Lucro', 'ROI', 'Conf.']
             if 'Volume/Dia' in display_df.columns:
                 cols.extend(['Volume/Dia', 'Liq.'])
             

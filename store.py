@@ -1,8 +1,7 @@
 import sqlite3
 import pandas as pd
 import os
-import numpy as np
-import ast
+from datetime import datetime, timezone
 
 # Configurações do Banco de Dados
 DB_FILE = "albion_market.db"
@@ -153,3 +152,20 @@ def get_prices(db_file: str = DB_FILE) -> pd.DataFrame:
     except sqlite3.Error as e:
         print(f"ERRO DB LEITURA: {e}")
         return pd.DataFrame()
+
+def get_last_update(db_file: str = DB_FILE) -> datetime | None:
+    """Retorna o datetime da última atualização registrada no banco de dados."""
+    if not os.path.exists(db_file):
+        return None
+    try:
+        with sqlite3.connect(db_file) as con:
+            cur = con.execute(
+                f"SELECT MAX(timestamp_sell_min) FROM {TABLE_NAME} WHERE timestamp_sell_min != ''"
+            )
+            result = cur.fetchone()
+            if result and result[0]:
+                dt = pd.to_datetime(result[0], utc=True, errors='coerce')
+                return dt.to_pydatetime() if not pd.isna(dt) else None
+            return None
+    except sqlite3.Error:
+        return None
