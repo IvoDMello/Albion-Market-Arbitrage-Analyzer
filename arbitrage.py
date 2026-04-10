@@ -97,7 +97,9 @@ def find_arbitrage(df_prices: pd.DataFrame, fee_pct: float, transport_cost: int 
     if df_arb.empty:
         return pd.DataFrame()
 
-    df_arb['profit_pct'] = (df_arb['net_profit'] / df_arb['buy_price']) * 100.0
+    # profit_pct representa a oportunidade de mercado (após taxas, antes do transporte)
+    # para que o filtro de ROI% não seja distorcido pelo custo de transporte
+    df_arb['profit_pct'] = ((df_arb['sell_price'] * fee_multiplier) - df_arb['buy_price']) / df_arb['buy_price'] * 100.0
     df_arb['confidence_score'] = (df_arb['confidence_buy'] + df_arb['confidence_sell']) / 2.0
     
     df_final = df_arb[[

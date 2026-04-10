@@ -110,13 +110,20 @@ if st.sidebar.button("🔄 Atualizar Dados", type="primary"):
         with st.spinner(f"Buscando preços para {len(final_items_list)} itens..."):
             # Busca novos dados na API
             api_df = fetch_prices.fetch_prices_real(final_items_list, city_input, quality_input)
-            
+
             # Atualiza o Banco de Dados
             store.init_db()
+            purged = store.purge_stale(hours=168)
             count = store.insert_prices(api_df)
-            
-            if count > 0:
-                st.sidebar.success(f"Atualizado! {count} preços novos.")
+
+            if purged > 0:
+                st.sidebar.caption(f"🗑️ {purged} registros antigos removidos.")
+
+            if not api_df.empty:
+                if count > 0:
+                    st.sidebar.success(f"Atualizado! {count} itens novos adicionados.")
+                else:
+                    st.sidebar.success("Preços existentes atualizados com sucesso.")
             else:
                 st.sidebar.warning("API não retornou dados novos (talvez ninguém tenha escaneado esses itens recentemente).")
 
@@ -185,9 +192,11 @@ else:
                 unique_destinations = final_view['sell_city'].unique()
                 volume_map = {}
                 for city in unique_destinations:
-                    items_for_city = final_view[final_view['sell_city'] == city]['item_id_quality'].apply(
-                        lambda x: x.split('_Q')[0]
-                    ).unique().tolist()
+                    items_for_city = tuple(
+                        final_view[final_view['sell_city'] == city]['item_id_quality'].apply(
+                            lambda x: x.split('_Q')[0]
+                        ).unique().tolist()
+                    )
                     vols = fetch_prices.fetch_sales_history(items_for_city, city)
                     volume_map.update(vols)
 

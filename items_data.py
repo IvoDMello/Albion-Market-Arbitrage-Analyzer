@@ -61,11 +61,9 @@ def generate_item_list(base_items_dict, selected_tiers, selected_enchants):
                     # Item Flat: T4_ORE
                     final_ids.append(full_base)
                 else:
-                    # Item Encantado: T4_ORE_LEVEL1@1
-                    # Nota: Recursos e equipamentos seguem este padrão.
-                    # Alguns itens (como montarias) não tem encantamento dessa forma,
-                    # mas para recursos funciona bem.
-                    item_id_ench = f"{full_base}_LEVEL{ench}@{ench}"
+                    # Item Encantado: T4_ORE@1
+                    # Formato oficial da Albion Data Project API para recursos encantados.
+                    item_id_ench = f"{full_base}@{ench}"
                     final_ids.append(item_id_ench)
                     
     return final_ids

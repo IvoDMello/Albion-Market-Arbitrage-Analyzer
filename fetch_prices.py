@@ -4,6 +4,13 @@ import requests
 from datetime import datetime
 import re
 
+try:
+    import streamlit as st
+    _cache = st.cache_data(ttl=3600)
+except Exception:
+    # Fora do runtime do Streamlit (testes, CLI direto): sem cache
+    _cache = lambda f: f
+
 # Constantes de Configuração
 BASE_API_URL = "https://www.albion-online-data.com/api/v2/stats/prices"
 NULL_TIMESTAMP = "0001-01-01T00:00:00" # Valor padrão da API para datas nulas
@@ -105,23 +112,28 @@ def fetch_prices_real(items: list[str], cities: list[str], qualities: list[int])
         print(f"ERRO API: Falha na requisição: {e}")
         return pd.DataFrame()
 
-def fetch_sales_history(items: list[str], city: str, quality: int = 1) -> dict:
+@_cache
+def fetch_sales_history(items: tuple[str, ...], city: str, quality: int = 1) -> dict:
     try:
         if not items:
             return {}
 
         chunk_size = 20
         results = {}
-        location_param = city.replace(" ", "%20")
-        time_scale = 24 
+        time_scale = 24
 
         for i in range(0, len(items), chunk_size):
             chunk = items[i:i+chunk_size]
             items_str = ",".join(chunk)
-            
-            url = f"https://www.albion-online-data.com/api/v2/stats/history/{items_str}?locations={location_param}&qualities={quality}&time-scale={time_scale}"
-            
-            response = requests.get(url, timeout=10)
+
+            url = f"https://www.albion-online-data.com/api/v2/stats/history/{items_str}"
+            params = {
+                'locations': city,
+                'qualities': quality,
+                'time-scale': time_scale,
+            }
+
+            response = requests.get(url, params=params, timeout=10)
             if response.status_code != 200:
                 continue
                 

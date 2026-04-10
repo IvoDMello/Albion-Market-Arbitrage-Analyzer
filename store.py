@@ -112,10 +112,11 @@ def insert_prices(df: pd.DataFrame, db_file: str = DB_FILE) -> int:
 
     try:
         with sqlite3.connect(db_file) as con:
+            count_before = con.execute(f"SELECT COUNT(*) FROM {TABLE_NAME}").fetchone()[0]
             data_tuples = [tuple(x) for x in df_clean.to_records(index=False)]
             insert_query = f"""
             INSERT OR REPLACE INTO {TABLE_NAME} (
-                item_id, city, quality, 
+                item_id, city, quality,
                 sell_price_min, timestamp_sell_min,
                 buy_price_max, timestamp_buy_max,
                 tier
@@ -124,7 +125,8 @@ def insert_prices(df: pd.DataFrame, db_file: str = DB_FILE) -> int:
             cursor = con.cursor()
             cursor.executemany(insert_query, data_tuples)
             con.commit()
-            return cursor.rowcount
+            count_after = con.execute(f"SELECT COUNT(*) FROM {TABLE_NAME}").fetchone()[0]
+            return count_after - count_before
     except sqlite3.Error as e:
         print(f"ERRO DB: {e}")
         return 0
@@ -152,6 +154,26 @@ def get_prices(db_file: str = DB_FILE) -> pd.DataFrame:
     except sqlite3.Error as e:
         print(f"ERRO DB LEITURA: {e}")
         return pd.DataFrame()
+
+def purge_stale(hours: int = 168, db_file: str = DB_FILE) -> int:
+    """Remove registros cujos preços de venda não foram atualizados nos últimos `hours` horas."""
+    if not os.path.exists(db_file):
+        return 0
+    try:
+        with sqlite3.connect(db_file) as con:
+            cur = con.execute(
+                f"""
+                DELETE FROM {TABLE_NAME}
+                WHERE timestamp_sell_min != ''
+                  AND timestamp_sell_min IS NOT NULL
+                  AND datetime(timestamp_sell_min) < datetime('now', '-{int(hours)} hours')
+                """
+            )
+            con.commit()
+            return cur.rowcount
+    except sqlite3.Error as e:
+        print(f"ERRO DB purge_stale: {e}")
+        return 0
 
 def get_last_update(db_file: str = DB_FILE) -> datetime | None:
     """Retorna o datetime da última atualização registrada no banco de dados."""
